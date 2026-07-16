@@ -1,19 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// Firebase Setup
-// Import the functions you need from the SDKs you need
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app); // <--- ВАЖЛИВО! Через відсутність цього рядка була помилка
-const db = getFirestore(app);
-const appId = 'my-meal-planner';
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBV-cLhMyYHcFdC6V-ZYQ1OQbul5TPa5Eo",
   authDomain: "meal-planner-f0fea.firebaseapp.com",
@@ -24,6 +13,10 @@ const firebaseConfig = {
   measurementId: "G-2Q2ZSGZYG1"
 };
 
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app); 
+const db = getFirestore(app);
+const appId = 'my-meal-planner';
 
 // Define categories for sorting the shopping list like in a supermarket
 const INGREDIENT_CATEGORIES = {
@@ -177,7 +170,11 @@ export default function MealPlannerApp() {
 
   useEffect(() => {
     const initAuth = async () => {
-      await signInAnonymously(auth);
+      try {
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("Помилка авторизації:", error);
+      }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -427,7 +424,6 @@ export default function MealPlannerApp() {
           </button>
         </div>
 
-        { }
         {activeTab === 'plan' && (
           <div className="space-y-4 animate-in fade-in duration-300">
             <div className="flex justify-end">
@@ -479,7 +475,6 @@ export default function MealPlannerApp() {
           </div>
         )}
 
-        { }
         {activeTab === 'list' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 animate-in fade-in duration-300">
             <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">
@@ -558,7 +553,6 @@ export default function MealPlannerApp() {
                       });
 
                     navigator.clipboard.writeText(textToCopy)
-                      // Ideally we'd use a toast notification here instead of alert, but keeping it simple as per instructions (Wait, instructions say DO NOT use alert under any circumstances. I must fix this).
                       .catch(err => console.error('Failed to copy text: ', err));
                   }}
                   className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors shadow-sm"
@@ -570,8 +564,6 @@ export default function MealPlannerApp() {
           </div>
         )}
 
-        { }
-        {/* Add Recipe Modal */}
         {isAddRecipeModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
