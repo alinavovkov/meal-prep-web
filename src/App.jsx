@@ -43,6 +43,49 @@ const getCategoryForIngredient = (ingredientName) => {
   return 'Інше';
 };
 
+// Helper function for smart text parsing
+const parseSmartText = (text) => {
+  if (!text.trim()) return [];
+  const results = [];
+
+  // Add newlines between glued ingredients (e.g. "1 лЯйця" -> "1 л\nЯйця")
+  let processText = text.replace(/(л|г|кг|мл|шт\.|шт|ст\.\s*л\.|ст\.л\.|ч\.\s*л\.|ч\.л\.)\s*([А-ЯІЇЄҐ])/g, "$1\n$2");
+  const lines = processText.split('\n');
+
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    // Match Name, Amount, Unit
+    const match = trimmed.match(/(.*?)\s*(\d+(?:[.,]\d+)?)\s*(г|кг|мл|л|шт\.?|ст\.?\s*л\.?|ч\.?\s*л\.?|зубчі?к?|пучок)?\s*$/i);
+
+    if (match) {
+      let name = match[1].trim();
+      let amountStr = match[2].replace(',', '.');
+      let amount = parseFloat(amountStr);
+      let rawUnit = match[3] ? match[3].toLowerCase().replace(/\s/g, '') : 'шт';
+      let unit = 'шт';
+
+      // Map to standard units
+      if (rawUnit.includes('г') && !rawUnit.includes('кг')) unit = 'г';
+      else if (rawUnit.includes('кг')) { unit = 'г'; amount *= 1000; }
+      else if (rawUnit.includes('мл')) unit = 'мл';
+      else if (rawUnit === 'л') { unit = 'мл'; amount *= 1000; }
+      else if (rawUnit.includes('ст.л') || rawUnit.includes('стл')) unit = 'ст.л';
+      else if (rawUnit.includes('ч.л') || rawUnit.includes('чл')) unit = 'ч.л';
+      else if (rawUnit.includes('шт')) unit = 'шт';
+
+      // Clean up name artifacts
+      name = name.replace(/^[-–—*,•\s]+|[-–—*,.\s]+$/g, '');
+
+      if (name && !isNaN(amount)) {
+        results.push({ name, amount, unit });
+      }
+    }
+  });
+  return results;
+};
+
 // Define the initial database of recipes.
 const INITIAL_RECIPES_DB = {
   'roast': {
@@ -159,10 +202,13 @@ export default function MealPlannerApp() {
     return initialPlan;
   });
 
-  // State for the "Add Recipe" modal
+  // State for the "Add/Edit Recipe" modal
   const [isAddRecipeModalOpen, setIsAddRecipeModalOpen] = useState(false);
+  const [editingRecipeId, setEditingRecipeId] = useState(null); // null means adding new, string means editing existing
   const [newRecipeName, setNewRecipeName] = useState('');
   const [newRecipeIngredients, setNewRecipeIngredients] = useState([{ name: '', amount: '', unit: 'г' }]);
+  const [smartText, setSmartText] = useState('');
+  const [smartError, setSmartError] = useState('');
 
   // Firebase Auth & Data Sync States
   const [user, setUser] = useState(null);
@@ -239,6 +285,41 @@ export default function MealPlannerApp() {
     updateCloudState({ plan: emptyPlan, checkedItems: {} });
   };
 
+  const handleOpenAddModal = () => {
+    setNewRecipeName('');
+    setNewRecipeIngredients([{ name: '', amount: '', unit: 'г' }]);
+    setEditingRecipeId(null);
+    setSmartText('');
+    setSmartError('');
+    setIsAddRecipeModalOpen(true);
+  };
+
+  const handleOpenEditModal = (recipeId) => {
+    const recipe = recipesDb[recipeId];
+    if (!recipe) return;
+    
+    setNewRecipeName(recipe.name);
+    setNewRecipeIngredients(recipe.ingredients.length > 0 ? [...recipe.ingredients] : [{ name: '', amount: '', unit: 'г' }]);
+    setEditingRecipeId(recipeId);
+    setSmartText('');
+    setSmartError('');
+    setIsAddRecipeModalOpen(true);
+  };
+
+  const handleSmartImport = () => {
+    setSmartError('');
+    const parsed = parseSmartText(smartText);
+    if (parsed.length > 0) {
+      // Filter out empty rows before adding new ones
+      const current = newRecipeIngredients.filter(ing => ing.name.trim() !== '' || ing.amount !== '');
+      setNewRecipeIngredients([...current, ...parsed]);
+      setSmartText('');
+    } else {
+      setSmartError('Не вдалося розпізнати інгредієнти. Перевірте текст.');
+      setTimeout(() => setSmartError(''), 3000);
+    }
+  };
+
   const handleAddIngredientRow = () => {
     setNewRecipeIngredients([...newRecipeIngredients, { name: '', amount: '', unit: 'г' }]);
   };
@@ -260,13 +341,13 @@ export default function MealPlannerApp() {
     // Filter out incomplete ingredient rows
     const validIngredients = newRecipeIngredients.filter(ing => ing.name.trim() && ing.amount);
 
-    // Generate a unique ID for the new recipe
-    const newRecipeId = `custom_${Date.now()}`;
+    // If editing, use the existing ID. If adding new, generate a new ID.
+    const recipeIdToSave = editingRecipeId || `custom_${Date.now()}`;
 
     setRecipesDb(prev => {
       const newDb = {
         ...prev,
-        [newRecipeId]: {
+        [recipeIdToSave]: {
           name: newRecipeName,
           ingredients: validIngredients.map(ing => ({
             name: ing.name.trim(),
@@ -279,10 +360,9 @@ export default function MealPlannerApp() {
       return newDb;
     });
 
-    // Reset form and close modal
-    setNewRecipeName('');
-    setNewRecipeIngredients([{ name: '', amount: '', unit: 'г' }]);
+    // Close modal and reset
     setIsAddRecipeModalOpen(false);
+    setEditingRecipeId(null);
   };
 
   const toggleItemCheck = (key) => {
@@ -308,8 +388,7 @@ export default function MealPlannerApp() {
           // Add ingredients for this recipe multiplied by number of persons
           recipe.ingredients.forEach(ing => {
             const totalAmount = ing.amount * persons;
-            // Key based on name to aggregate identical ingredients even if they have slightly different units, 
-            // but for simplicity, we assume units for the same ingredient name are consistent.
+            // Key based on name to aggregate identical ingredients even if they have slightly different units
             const key = ing.name.trim().toLowerCase();
 
             if (list[key]) {
@@ -376,7 +455,7 @@ export default function MealPlannerApp() {
 
           <div className="flex items-center gap-4">
             <button
-              onClick={() => setIsAddRecipeModalOpen(true)}
+              onClick={handleOpenAddModal}
               className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm text-sm"
             >
               + Створити страву
@@ -447,25 +526,38 @@ export default function MealPlannerApp() {
                         <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                           {mealType}
                         </label>
-                        <select
-                          value={plan[day][mealType]}
-                          onChange={(e) => handleMealSelect(day, mealType, e.target.value)}
-                          className="w-full bg-gray-50 border border-gray-200 text-gray-700 py-2 px-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm appearance-none cursor-pointer truncate"
-                          style={{
-                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-                            backgroundPosition: `right 0.5rem center`,
-                            backgroundRepeat: `no-repeat`,
-                            backgroundSize: `1.5em 1.5em`,
-                            paddingRight: `2rem`
-                          }}
-                        >
-                          <option value="">-- Не обрано --</option>
-                          {Object.entries(recipesDb).map(([id, recipe]) => (
-                            <option key={id} value={id}>
-                              {recipe.name}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={plan[day][mealType]}
+                            onChange={(e) => handleMealSelect(day, mealType, e.target.value)}
+                            className="flex-1 w-full bg-gray-50 border border-gray-200 text-gray-700 py-2 px-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm appearance-none cursor-pointer truncate"
+                            style={{
+                              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                              backgroundPosition: `right 0.5rem center`,
+                              backgroundRepeat: `no-repeat`,
+                              backgroundSize: `1.5em 1.5em`,
+                              paddingRight: `2rem`
+                            }}
+                          >
+                            <option value="">-- Не обрано --</option>
+                            {Object.entries(recipesDb).map(([id, recipe]) => (
+                              <option key={id} value={id}>
+                                {recipe.name}
+                              </option>
+                            ))}
+                          </select>
+                          
+                          {/* Edit button appears if a meal is selected */}
+                          {plan[day][mealType] && (
+                            <button
+                              onClick={() => handleOpenEditModal(plan[day][mealType])}
+                              className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors border border-transparent hover:border-emerald-200"
+                              title="Редагувати склад страви"
+                            >
+                              ✏️
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -564,12 +656,15 @@ export default function MealPlannerApp() {
           </div>
         )}
 
+        {/* Add/Edit Recipe Modal */}
         {isAddRecipeModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-800">Додати нову страву</h2>
+                  <h2 className="text-xl font-bold text-gray-800">
+                    {editingRecipeId ? 'Редагувати страву' : 'Додати нову страву'}
+                  </h2>
                   <button
                     onClick={() => setIsAddRecipeModalOpen(false)}
                     className="text-gray-400 hover:text-gray-600 text-xl font-bold p-2"
@@ -588,6 +683,29 @@ export default function MealPlannerApp() {
                       placeholder="Наприклад: Картопля по-селянськи"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                  </div>
+
+                  <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                    <label className="block text-sm font-medium text-emerald-800 mb-2">
+                      ✨ Розумне додавання (вставте скопійовані інгредієнти)
+                    </label>
+                    <div className="flex gap-2">
+                      <textarea
+                        value={smartText}
+                        onChange={(e) => setSmartText(e.target.value)}
+                        placeholder="Вставте текст тут..."
+                        className="flex-1 border border-emerald-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[42px] resize-y bg-white"
+                        rows="2"
+                      />
+                      <button
+                        onClick={handleSmartImport}
+                        disabled={!smartText.trim()}
+                        className="bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors whitespace-nowrap self-start"
+                      >
+                        Розпізнати
+                      </button>
+                    </div>
+                    {smartError && <p className="text-red-500 text-xs mt-1">{smartError}</p>}
                   </div>
 
                   <div>
