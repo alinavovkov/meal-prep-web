@@ -18,7 +18,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'my-meal-planner';
 
-// Define categories for sorting the shopping list like in a supermarket
 const INGREDIENT_CATEGORIES = {
   'М\'ясо та птиця': 1,
   'Риба та морепродукти': 2,
@@ -30,7 +29,6 @@ const INGREDIENT_CATEGORIES = {
   'Інше': 8
 };
 
-// Helper function to map ingredients to categories
 const getCategoryForIngredient = (ingredientName) => {
   const lowerName = ingredientName.toLowerCase();
   if (lowerName.includes('свинин') || lowerName.includes('ялович') || lowerName.includes('кур') || lowerName.includes('фарш') || lowerName.includes('корейка')) return 'М\'ясо та птиця';
@@ -43,12 +41,10 @@ const getCategoryForIngredient = (ingredientName) => {
   return 'Інше';
 };
 
-// Helper function for smart text parsing
 const parseSmartText = (text) => {
   if (!text.trim()) return [];
   const results = [];
 
-  // Add newlines between glued ingredients (e.g. "1 лЯйця" -> "1 л\nЯйця")
   let processText = text.replace(/(л|г|кг|мл|шт\.|шт|ст\.\s*л\.|ст\.л\.|ч\.\s*л\.|ч\.л\.)\s*([А-ЯІЇЄҐ])/g, "$1\n$2");
   const lines = processText.split('\n');
 
@@ -56,17 +52,27 @@ const parseSmartText = (text) => {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    // Match Name, Amount, Unit
-    const match = trimmed.match(/(.*?)\s*(\d+(?:[.,]\d+)?)\s*(г|кг|мл|л|шт\.?|ст\.?\s*л\.?|ч\.?\s*л\.?|зубчі?к?|пучок)?\s*$/i);
+    let name = '';
+    let amountStr = '';
+    let rawUnit = '';
 
-    if (match) {
-      let name = match[1].trim();
-      let amountStr = match[2].replace(',', '.');
-      let amount = parseFloat(amountStr);
-      let rawUnit = match[3] ? match[3].toLowerCase().replace(/\s/g, '') : 'шт';
+    const matchStart = trimmed.match(/^(\d+(?:[.,]\d+)?)\s*(г|кг|мл|л|шт\.?|ст\.?\s*л\.?|ч\.?\s*л\.?|зубчі?к?|пучок)?\s+(.*)$/i);
+    const matchEnd = trimmed.match(/(.*?)\s*(\d+(?:[.,]\d+)?)\s*(г|кг|мл|л|шт\.?|ст\.?\s*л\.?|ч\.?\s*л\.?|зубчі?к?|пучок)?\s*$/i);
+
+    if (matchStart) {
+      amountStr = matchStart[1];
+      rawUnit = matchStart[2] ? matchStart[2].toLowerCase().replace(/\s/g, '') : 'шт';
+      name = matchStart[3].trim();
+    } else if (matchEnd) {
+      name = matchEnd[1].trim();
+      amountStr = matchEnd[2];
+      rawUnit = matchEnd[3] ? matchEnd[3].toLowerCase().replace(/\s/g, '') : 'шт';
+    }
+
+    if (name && amountStr) {
+      let amount = parseFloat(amountStr.replace(',', '.'));
       let unit = 'шт';
 
-      // Map to standard units
       if (rawUnit.includes('г') && !rawUnit.includes('кг')) unit = 'г';
       else if (rawUnit.includes('кг')) { unit = 'г'; amount *= 1000; }
       else if (rawUnit.includes('мл')) unit = 'мл';
@@ -75,7 +81,6 @@ const parseSmartText = (text) => {
       else if (rawUnit.includes('ч.л') || rawUnit.includes('чл')) unit = 'ч.л';
       else if (rawUnit.includes('шт')) unit = 'шт';
 
-      // Clean up name artifacts
       name = name.replace(/^[-–—*,•\s]+|[-–—*,.\s]+$/g, '');
 
       if (name && !isNaN(amount)) {
@@ -86,7 +91,6 @@ const parseSmartText = (text) => {
   return results;
 };
 
-// Define the initial database of recipes.
 const INITIAL_RECIPES_DB = {
   'roast': {
     name: 'Жарке по-домашньому',
@@ -177,40 +181,37 @@ const INITIAL_RECIPES_DB = {
   }
 };
 
-const DAYS_OF_WEEK = [
-  'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота', 'Неділя'
-];
+const DAYS_OF_WEEK = ['Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота', 'Неділя'];
 const MEAL_TYPES = ['Сніданок', 'Обід', 'Вечеря'];
 
 export default function MealPlannerApp() {
   const [persons, setPersons] = useState(2);
-  const [activeTab, setActiveTab] = useState('plan');
+  const [activeTab, setActiveTab] = useState('plan'); // 'plan', 'list', 'meals'
   const [recipesDb, setRecipesDb] = useState(INITIAL_RECIPES_DB);
-
-  // State for checked items in shopping list
   const [checkedItems, setCheckedItems] = useState({});
-
-  // State to hold the selected meals for each day and meal type
   const [plan, setPlan] = useState(() => {
     const initialPlan = {};
     DAYS_OF_WEEK.forEach(day => {
       initialPlan[day] = {};
       MEAL_TYPES.forEach(meal => {
-        initialPlan[day][meal] = ''; // empty string means no meal selected
+        initialPlan[day][meal] = ''; 
       });
     });
     return initialPlan;
   });
 
-  // State for the "Add/Edit Recipe" modal
+  // Modal States
   const [isAddRecipeModalOpen, setIsAddRecipeModalOpen] = useState(false);
-  const [editingRecipeId, setEditingRecipeId] = useState(null); // null means adding new, string means editing existing
+  const [editingRecipeId, setEditingRecipeId] = useState(null); 
   const [newRecipeName, setNewRecipeName] = useState('');
   const [newRecipeIngredients, setNewRecipeIngredients] = useState([{ name: '', amount: '', unit: 'г' }]);
   const [smartText, setSmartText] = useState('');
   const [smartError, setSmartError] = useState('');
+  
+  // Custom Confirmation Modal State
+  const [recipeToDelete, setRecipeToDelete] = useState(null);
 
-  // Firebase Auth & Data Sync States
+  // Auth States
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -260,13 +261,7 @@ export default function MealPlannerApp() {
 
   const handleMealSelect = (day, mealType, recipeId) => {
     setPlan(prevPlan => {
-      const newPlan = {
-        ...prevPlan,
-        [day]: {
-          ...prevPlan[day],
-          [mealType]: recipeId
-        }
-      };
+      const newPlan = { ...prevPlan, [day]: { ...prevPlan[day], [mealType]: recipeId } };
       updateCloudState({ plan: newPlan });
       return newPlan;
     });
@@ -276,9 +271,7 @@ export default function MealPlannerApp() {
     const emptyPlan = {};
     DAYS_OF_WEEK.forEach(day => {
       emptyPlan[day] = {};
-      MEAL_TYPES.forEach(meal => {
-        emptyPlan[day][meal] = '';
-      });
+      MEAL_TYPES.forEach(meal => emptyPlan[day][meal] = '');
     });
     setPlan(emptyPlan);
     setCheckedItems({});
@@ -297,7 +290,6 @@ export default function MealPlannerApp() {
   const handleOpenEditModal = (recipeId) => {
     const recipe = recipesDb[recipeId];
     if (!recipe) return;
-    
     setNewRecipeName(recipe.name);
     setNewRecipeIngredients(recipe.ingredients.length > 0 ? [...recipe.ingredients] : [{ name: '', amount: '', unit: 'г' }]);
     setEditingRecipeId(recipeId);
@@ -306,11 +298,38 @@ export default function MealPlannerApp() {
     setIsAddRecipeModalOpen(true);
   };
 
+  const confirmDeleteRecipe = () => {
+    if (!recipeToDelete) return;
+    
+    setRecipesDb(prev => {
+      const newDb = { ...prev };
+      delete newDb[recipeToDelete];
+      updateCloudState({ recipesDb: newDb });
+      return newDb;
+    });
+
+    setPlan(prevPlan => {
+      const newPlan = { ...prevPlan };
+      let planChanged = false;
+      DAYS_OF_WEEK.forEach(day => {
+        MEAL_TYPES.forEach(meal => {
+          if (newPlan[day][meal] === recipeToDelete) {
+            newPlan[day][meal] = '';
+            planChanged = true;
+          }
+        });
+      });
+      if (planChanged) updateCloudState({ plan: newPlan });
+      return newPlan;
+    });
+    
+    setRecipeToDelete(null);
+  };
+
   const handleSmartImport = () => {
     setSmartError('');
     const parsed = parseSmartText(smartText);
     if (parsed.length > 0) {
-      // Filter out empty rows before adding new ones
       const current = newRecipeIngredients.filter(ing => ing.name.trim() !== '' || ing.amount !== '');
       setNewRecipeIngredients([...current, ...parsed]);
       setSmartText('');
@@ -320,28 +339,19 @@ export default function MealPlannerApp() {
     }
   };
 
-  const handleAddIngredientRow = () => {
-    setNewRecipeIngredients([...newRecipeIngredients, { name: '', amount: '', unit: 'г' }]);
-  };
-
+  const handleAddIngredientRow = () => setNewRecipeIngredients([...newRecipeIngredients, { name: '', amount: '', unit: 'г' }]);
+  
   const handleIngredientChange = (index, field, value) => {
-    const updatedIngredients = [...newRecipeIngredients];
-    updatedIngredients[index][field] = value;
-    setNewRecipeIngredients(updatedIngredients);
+    const updated = [...newRecipeIngredients];
+    updated[index][field] = value;
+    setNewRecipeIngredients(updated);
   };
 
-  const handleRemoveIngredientRow = (index) => {
-    const updatedIngredients = newRecipeIngredients.filter((_, i) => i !== index);
-    setNewRecipeIngredients(updatedIngredients);
-  };
+  const handleRemoveIngredientRow = (index) => setNewRecipeIngredients(newRecipeIngredients.filter((_, i) => i !== index));
 
   const handleSaveRecipe = () => {
     if (!newRecipeName.trim()) return;
-
-    // Filter out incomplete ingredient rows
     const validIngredients = newRecipeIngredients.filter(ing => ing.name.trim() && ing.amount);
-
-    // If editing, use the existing ID. If adding new, generate a new ID.
     const recipeIdToSave = editingRecipeId || `custom_${Date.now()}`;
 
     setRecipesDb(prev => {
@@ -360,78 +370,50 @@ export default function MealPlannerApp() {
       return newDb;
     });
 
-    // Close modal and reset
     setIsAddRecipeModalOpen(false);
     setEditingRecipeId(null);
   };
 
   const toggleItemCheck = (key) => {
     setCheckedItems(prev => {
-      const newChecked = {
-        ...prev,
-        [key]: !prev[key]
-      };
+      const newChecked = { ...prev, [key]: !prev[key] };
       updateCloudState({ checkedItems: newChecked });
       return newChecked;
     });
   };
 
-  // useMemo to recalculate the shopping list only when plan, persons, or recipes change
   const shoppingListCategories = useMemo(() => {
     const list = {};
-
-    // Iterate through the plan
     Object.values(plan).forEach(dayMeals => {
       Object.values(dayMeals).forEach(recipeId => {
         if (recipeId && recipesDb[recipeId]) {
-          const recipe = recipesDb[recipeId];
-          // Add ingredients for this recipe multiplied by number of persons
-          recipe.ingredients.forEach(ing => {
+          recipesDb[recipeId].ingredients.forEach(ing => {
             const totalAmount = ing.amount * persons;
-            // Key based on name to aggregate identical ingredients even if they have slightly different units
             const key = ing.name.trim().toLowerCase();
-
             if (list[key]) {
               list[key].amount += totalAmount;
             } else {
-              list[key] = {
-                name: ing.name,
-                amount: totalAmount,
-                unit: ing.unit,
-                originalKey: key
-              };
+              list[key] = { name: ing.name, amount: totalAmount, unit: ing.unit, originalKey: key };
             }
           });
         }
       });
     });
 
-    // Group by category
     const categorizedList = {};
-    Object.keys(INGREDIENT_CATEGORIES).forEach(cat => {
-      categorizedList[cat] = [];
-    });
+    Object.keys(INGREDIENT_CATEGORIES).forEach(cat => categorizedList[cat] = []);
 
     Object.values(list).forEach(item => {
       const category = getCategoryForIngredient(item.name);
-      if (!categorizedList[category]) {
-        categorizedList[category] = [];
-      }
+      if (!categorizedList[category]) categorizedList[category] = [];
       categorizedList[category].push(item);
     });
 
-    // Sort items within each category alphabetically
-    Object.keys(categorizedList).forEach(cat => {
-      categorizedList[cat].sort((a, b) => a.name.localeCompare(b.name));
-    });
-
+    Object.keys(categorizedList).forEach(cat => categorizedList[cat].sort((a, b) => a.name.localeCompare(b.name)));
     return categorizedList;
   }, [plan, persons, recipesDb]);
 
-  // Check if shopping list is completely empty
-  const isShoppingListEmpty = useMemo(() => {
-    return Object.values(shoppingListCategories).every(catList => catList.length === 0);
-  }, [shoppingListCategories]);
+  const isShoppingListEmpty = useMemo(() => Object.values(shoppingListCategories).every(catList => catList.length === 0), [shoppingListCategories]);
 
   if (loading) {
     return (
@@ -445,119 +427,59 @@ export default function MealPlannerApp() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
-
-        {/* Header section */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Меню на тиждень</h1>
             <p className="text-gray-500 text-sm">Сплануйте своє харчування та отримайте список покупок</p>
           </div>
-
           <div className="flex items-center gap-4">
-            <button
-              onClick={handleOpenAddModal}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm text-sm"
-            >
+            <button onClick={handleOpenAddModal} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm text-sm whitespace-nowrap">
               + Створити страву
             </button>
             <div className="flex items-center bg-emerald-50 rounded-lg p-2 border border-emerald-100">
               <label htmlFor="persons" className="mr-2 font-medium text-emerald-800 text-sm">Персон:</label>
               <div className="flex items-center">
-                <button
-                  onClick={() => handlePersonsChange(persons - 1)}
-                  className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-emerald-600 hover:bg-emerald-100 font-bold border border-emerald-200 transition-colors"
-                >
-                  -
-                </button>
+                <button onClick={() => handlePersonsChange(persons - 1)} className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-emerald-600 hover:bg-emerald-100 font-bold border border-emerald-200 transition-colors">-</button>
                 <span className="w-8 text-center font-bold text-base text-emerald-900">{persons}</span>
-                <button
-                  onClick={() => handlePersonsChange(persons + 1)}
-                  className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-emerald-600 hover:bg-emerald-100 font-bold border border-emerald-200 transition-colors"
-                >
-                  +
-                </button>
+                <button onClick={() => handlePersonsChange(persons + 1)} className="w-7 h-7 flex items-center justify-center bg-white rounded-md text-emerald-600 hover:bg-emerald-100 font-bold border border-emerald-200 transition-colors">+</button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-xl max-w-sm mx-auto">
-          <button
-            onClick={() => setActiveTab('plan')}
-            className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${activeTab === 'plan'
-                ? 'bg-white text-emerald-700 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
-              }`}
-          >
-            🗓️ Планувальник
-          </button>
-          <button
-            onClick={() => setActiveTab('list')}
-            className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${activeTab === 'list'
-                ? 'bg-white text-emerald-700 shadow-sm'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
-              }`}
-          >
-            🛒 Список покупок
-          </button>
+        {/* Навігація по табах */}
+        <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-xl max-w-lg mx-auto">
+          <button onClick={() => setActiveTab('plan')} className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${activeTab === 'plan' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'}`}>🗓️ Планувальник</button>
+          <button onClick={() => setActiveTab('list')} className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${activeTab === 'list' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'}`}>🛒 Список покупок</button>
+          <button onClick={() => setActiveTab('meals')} className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all duration-200 ${activeTab === 'meals' ? 'bg-white text-rose-600 shadow-sm' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'}`}>🍽️ Страви</button>
         </div>
 
         {activeTab === 'plan' && (
           <div className="space-y-4 animate-in fade-in duration-300">
             <div className="flex justify-end">
-              <button
-                onClick={handleClearPlan}
-                className="text-red-500 hover:text-red-700 text-sm font-medium flex items-center gap-1 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50"
-              >
+              <button onClick={handleClearPlan} className="text-red-500 hover:text-red-700 text-sm font-medium flex items-center gap-1 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-50">
                 🗑️ Очистити план
               </button>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {DAYS_OF_WEEK.map(day => (
                 <div key={day} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-                  <div className="bg-emerald-600 text-white p-2 text-center font-semibold text-sm">
-                    {day}
-                  </div>
+                  <div className="bg-emerald-600 text-white p-2 text-center font-semibold text-sm">{day}</div>
                   <div className="p-4 space-y-3">
                     {MEAL_TYPES.map(mealType => (
                       <div key={`${day}-${mealType}`} className="flex flex-col">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                          {mealType}
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={plan[day][mealType]}
-                            onChange={(e) => handleMealSelect(day, mealType, e.target.value)}
-                            className="flex-1 w-full bg-gray-50 border border-gray-200 text-gray-700 py-2 px-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm appearance-none cursor-pointer truncate"
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-                              backgroundPosition: `right 0.5rem center`,
-                              backgroundRepeat: `no-repeat`,
-                              backgroundSize: `1.5em 1.5em`,
-                              paddingRight: `2rem`
-                            }}
-                          >
-                            <option value="">-- Не обрано --</option>
-                            {Object.entries(recipesDb).map(([id, recipe]) => (
-                              <option key={id} value={id}>
-                                {recipe.name}
-                              </option>
-                            ))}
-                          </select>
-                          
-                          {/* Edit button appears if a meal is selected */}
-                          {plan[day][mealType] && (
-                            <button
-                              onClick={() => handleOpenEditModal(plan[day][mealType])}
-                              className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors border border-transparent hover:border-emerald-200"
-                              title="Редагувати склад страви"
-                            >
-                              ✏️
-                            </button>
-                          )}
-                        </div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">{mealType}</label>
+                        <select
+                          value={plan[day][mealType]}
+                          onChange={(e) => handleMealSelect(day, mealType, e.target.value)}
+                          className="w-full bg-gray-50 border border-gray-200 text-gray-700 py-2 px-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm appearance-none cursor-pointer truncate"
+                          style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: `right 0.5rem center`, backgroundRepeat: `no-repeat`, backgroundSize: `1.5em 1.5em`, paddingRight: `2rem` }}
+                        >
+                          <option value="">-- Не обрано --</option>
+                          {Object.entries(recipesDb).map(([id, recipe]) => (
+                            <option key={id} value={id}>{recipe.name}</option>
+                          ))}
+                        </select>
                       </div>
                     ))}
                   </div>
@@ -569,86 +491,50 @@ export default function MealPlannerApp() {
 
         {activeTab === 'list' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 animate-in fade-in duration-300">
-            <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">
-              Список продуктів на {persons} {persons === 1 ? 'персону' : (persons > 1 && persons < 5) ? 'персони' : 'персон'}
-            </h2>
-
+            <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Список продуктів на {persons} {persons === 1 ? 'персону' : (persons > 1 && persons < 5) ? 'персони' : 'персон'}</h2>
             {isShoppingListEmpty ? (
               <div className="text-center py-12 text-gray-400">
                 <div className="text-4xl mb-3">🛒</div>
                 <p>Ваш список покупок порожній.</p>
-                <p className="text-sm mt-1">Додайте страви у планувальнику, щоб сформувати список.</p>
-                <button
-                  onClick={() => setActiveTab('plan')}
-                  className="mt-4 inline-block bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-200 transition-colors"
-                >
-                  Перейти до планування
-                </button>
+                <button onClick={() => setActiveTab('plan')} className="mt-4 inline-block bg-emerald-100 text-emerald-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-200 transition-colors">Перейти до планування</button>
               </div>
             ) : (
               <div className="space-y-6">
-                {/* Map over categories sorted by INGREDIENT_CATEGORIES order */}
-                {Object.entries(shoppingListCategories)
-                  .sort(([catA], [catB]) => INGREDIENT_CATEGORIES[catA] - INGREDIENT_CATEGORIES[catB])
-                  .filter(([_, items]) => items.length > 0)
-                  .map(([category, items]) => (
-                    <div key={category} className="mb-4">
-                      <h3 className="font-semibold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-md mb-2 text-sm uppercase tracking-wide">
-                        {category}
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 pl-2">
-                        {items.map((item, index) => {
-                          const itemKey = item.originalKey;
-                          const isChecked = checkedItems[itemKey];
-                          return (
-                            <label
-                              key={itemKey}
-                              className={`flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 cursor-pointer transition-colors ${isChecked ? 'opacity-50' : ''}`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={!!isChecked}
-                                  onChange={() => toggleItemCheck(itemKey)}
-                                  className="w-5 h-5 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
-                                />
-                                <span className={`text-gray-700 transition-all ${isChecked ? 'line-through text-gray-400' : ''}`}>
-                                  {item.name}
-                                </span>
-                              </div>
-                              <span className={`font-semibold px-2 py-0.5 rounded text-sm transition-all ${isChecked ? 'bg-transparent text-gray-400' : 'text-gray-900 bg-gray-100'}`}>
-                                {Number.isInteger(item.amount) ? item.amount : item.amount.toFixed(1)} {item.unit}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
+                {Object.entries(shoppingListCategories).sort(([catA], [catB]) => INGREDIENT_CATEGORIES[catA] - INGREDIENT_CATEGORIES[catB]).filter(([_, items]) => items.length > 0).map(([category, items]) => (
+                  <div key={category} className="mb-4">
+                    <h3 className="font-semibold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-md mb-2 text-sm uppercase tracking-wide">{category}</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2 pl-2">
+                      {items.map((item) => {
+                        const itemKey = item.originalKey;
+                        const isChecked = checkedItems[itemKey];
+                        return (
+                          <label key={itemKey} className={`flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 cursor-pointer transition-colors ${isChecked ? 'opacity-50' : ''}`}>
+                            <div className="flex items-center gap-3">
+                              <input type="checkbox" checked={!!isChecked} onChange={() => toggleItemCheck(itemKey)} className="w-5 h-5 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 cursor-pointer accent-emerald-600" />
+                              <span className={`text-gray-700 transition-all ${isChecked ? 'line-through text-gray-400' : ''}`}>{item.name}</span>
+                            </div>
+                            <span className={`font-semibold px-2 py-0.5 rounded text-sm transition-all ${isChecked ? 'bg-transparent text-gray-400' : 'text-gray-900 bg-gray-100'}`}>
+                              {Number.isInteger(item.amount) ? item.amount : item.amount.toFixed(1)} {item.unit}
+                            </span>
+                          </label>
+                        );
+                      })}
                     </div>
-                  ))}
+                  </div>
+                ))}
               </div>
             )}
-
             {!isShoppingListEmpty && (
               <div className="mt-8 flex justify-end">
-                <button
-                  onClick={() => {
-                    let textToCopy = 'Список покупок:\n\n';
-                    Object.entries(shoppingListCategories)
-                      .sort(([catA], [catB]) => INGREDIENT_CATEGORIES[catA] - INGREDIENT_CATEGORIES[catB])
-                      .filter(([_, items]) => items.length > 0)
-                      .forEach(([category, items]) => {
-                        textToCopy += `[ ${category} ]\n`;
-                        items.forEach(item => {
-                          textToCopy += `- ${item.name}: ${Number.isInteger(item.amount) ? item.amount : item.amount.toFixed(1)} ${item.unit}\n`;
-                        });
-                        textToCopy += '\n';
-                      });
-
-                    navigator.clipboard.writeText(textToCopy)
-                      .catch(err => console.error('Failed to copy text: ', err));
-                  }}
-                  className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors shadow-sm"
-                >
+                <button onClick={() => {
+                  let textToCopy = 'Список покупок:\n\n';
+                  Object.entries(shoppingListCategories).sort(([catA], [catB]) => INGREDIENT_CATEGORIES[catA] - INGREDIENT_CATEGORIES[catB]).filter(([_, items]) => items.length > 0).forEach(([category, items]) => {
+                    textToCopy += `[ ${category} ]\n`;
+                    items.forEach(item => textToCopy += `- ${item.name}: ${Number.isInteger(item.amount) ? item.amount : item.amount.toFixed(1)} ${item.unit}\n`);
+                    textToCopy += '\n';
+                  });
+                  navigator.clipboard.writeText(textToCopy).catch(err => console.error('Failed to copy text: ', err));
+                }} className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors shadow-sm">
                   📋 Скопіювати список
                 </button>
               </div>
@@ -656,131 +542,114 @@ export default function MealPlannerApp() {
           </div>
         )}
 
-        {/* Add/Edit Recipe Modal */}
+        {activeTab === 'meals' && (
+          <div className="space-y-4 animate-in fade-in duration-300">
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+               {Object.entries(recipesDb).map(([recipeId, recipe]) => (
+                 <div key={recipeId} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+                    <div className="bg-emerald-50 px-4 py-3 border-b border-emerald-100 flex justify-between items-center">
+                      <h3 className="font-bold text-gray-800 truncate" title={recipe.name}>{recipe.name}</h3>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => handleOpenEditModal(recipeId)} className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-100 rounded-md transition-colors" title="Редагувати">✏️</button>
+                        <button onClick={() => setRecipeToDelete(recipeId)} className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors" title="Видалити">🗑️</button>
+                      </div>
+                    </div>
+                    <div className="p-4 flex-1">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Інгредієнти (1 порція):</p>
+                      <ul className="space-y-1.5">
+                        {recipe.ingredients.slice(0, 5).map((ing, idx) => (
+                           <li key={idx} className="text-sm text-gray-700 flex justify-between">
+                             <span className="truncate pr-2">{ing.name}</span>
+                             <span className="font-medium text-gray-500 whitespace-nowrap">{ing.amount} {ing.unit}</span>
+                           </li>
+                        ))}
+                        {recipe.ingredients.length > 5 && (
+                          <li className="text-xs text-gray-400 italic pt-1">
+                            + ще {recipe.ingredients.length - 5} інгредієнтів...
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
+
         {isAddRecipeModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold text-gray-800">
-                    {editingRecipeId ? 'Редагувати страву' : 'Додати нову страву'}
-                  </h2>
-                  <button
-                    onClick={() => setIsAddRecipeModalOpen(false)}
-                    className="text-gray-400 hover:text-gray-600 text-xl font-bold p-2"
-                  >
-                    ×
-                  </button>
+                  <h2 className="text-xl font-bold text-gray-800">{editingRecipeId ? 'Редагувати страву' : 'Додати нову страву'}</h2>
+                  <button onClick={() => setIsAddRecipeModalOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl font-bold p-2">×</button>
                 </div>
-
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Назва страви</label>
-                    <input
-                      type="text"
-                      value={newRecipeName}
-                      onChange={(e) => setNewRecipeName(e.target.value)}
-                      placeholder="Наприклад: Картопля по-селянськи"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
+                    <input type="text" value={newRecipeName} onChange={(e) => setNewRecipeName(e.target.value)} placeholder="Наприклад: Картопля по-селянськи" className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                   </div>
-
                   <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
-                    <label className="block text-sm font-medium text-emerald-800 mb-2">
-                      ✨ Розумне додавання (вставте скопійовані інгредієнти)
-                    </label>
+                    <label className="block text-sm font-medium text-emerald-800 mb-2">✨ Розумне додавання (вставте скопійовані інгредієнти)</label>
                     <div className="flex gap-2">
-                      <textarea
-                        value={smartText}
-                        onChange={(e) => setSmartText(e.target.value)}
-                        placeholder="Вставте текст тут..."
-                        className="flex-1 border border-emerald-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[42px] resize-y bg-white"
-                        rows="2"
-                      />
-                      <button
-                        onClick={handleSmartImport}
-                        disabled={!smartText.trim()}
-                        className="bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors whitespace-nowrap self-start"
-                      >
-                        Розпізнати
-                      </button>
+                      <textarea value={smartText} onChange={(e) => setSmartText(e.target.value)} placeholder="Вставте текст тут..." className="flex-1 border border-emerald-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[42px] resize-y bg-white" rows="2" />
+                      <button onClick={handleSmartImport} disabled={!smartText.trim()} className="bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors whitespace-nowrap self-start">Розпізнати</button>
                     </div>
                     {smartError && <p className="text-red-500 text-xs mt-1">{smartError}</p>}
                   </div>
-
                   <div>
                     <div className="flex justify-between items-end mb-2">
                       <label className="block text-sm font-medium text-gray-700">Інгредієнти (на 1 порцію)</label>
-                      <button
-                        onClick={handleAddIngredientRow}
-                        className="text-emerald-600 hover:text-emerald-800 text-sm font-medium"
-                      >
-                        + Додати рядок
-                      </button>
+                      <button onClick={handleAddIngredientRow} className="text-emerald-600 hover:text-emerald-800 text-sm font-medium">+ Додати рядок</button>
                     </div>
-
                     <div className="space-y-2">
                       {newRecipeIngredients.map((ing, index) => (
                         <div key={index} className="flex gap-2 items-start">
                           <div className="flex-1">
-                            <input
-                              type="text"
-                              value={ing.name}
-                              onChange={(e) => handleIngredientChange(index, 'name', e.target.value)}
-                              placeholder="Назва продукту"
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
+                            <input type="text" value={ing.name} onChange={(e) => handleIngredientChange(index, 'name', e.target.value)} placeholder="Назва продукту" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                           </div>
                           <div className="w-20">
-                            <input
-                              type="number"
-                              value={ing.amount}
-                              onChange={(e) => handleIngredientChange(index, 'amount', e.target.value)}
-                              placeholder="К-ть"
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
+                            <input type="number" value={ing.amount} onChange={(e) => handleIngredientChange(index, 'amount', e.target.value)} placeholder="К-ть" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
                           </div>
                           <div className="w-20">
-                            <select
-                              value={ing.unit}
-                              onChange={(e) => handleIngredientChange(index, 'unit', e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
-                            >
-                              <option value="г">г</option>
-                              <option value="мл">мл</option>
-                              <option value="шт">шт</option>
-                              <option value="ст.л">ст.л</option>
-                              <option value="ч.л">ч.л</option>
+                            <select value={ing.unit} onChange={(e) => handleIngredientChange(index, 'unit', e.target.value)} className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
+                              <option value="г">г</option><option value="мл">мл</option><option value="шт">шт</option><option value="ст.л">ст.л</option><option value="ч.л">ч.л</option>
                             </select>
                           </div>
-                          <button
-                            onClick={() => handleRemoveIngredientRow(index)}
-                            className="p-2 text-red-400 hover:text-red-600 transition-colors"
-                            disabled={newRecipeIngredients.length === 1}
-                          >
-                            ×
-                          </button>
+                          <button onClick={() => handleRemoveIngredientRow(index)} className="p-2 text-red-400 hover:text-red-600 transition-colors" disabled={newRecipeIngredients.length === 1}>×</button>
                         </div>
                       ))}
                     </div>
                   </div>
                 </div>
-
                 <div className="mt-6 flex justify-end gap-3">
-                  <button
-                    onClick={() => setIsAddRecipeModalOpen(false)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium"
-                  >
-                    Скасувати
-                  </button>
-                  <button
-                    onClick={handleSaveRecipe}
-                    disabled={!newRecipeName.trim()}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Зберегти страву
-                  </button>
+                  <button onClick={() => setIsAddRecipeModalOpen(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium">Скасувати</button>
+                  <button onClick={handleSaveRecipe} disabled={!newRecipeName.trim()} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed">Зберегти страву</button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Custom Delete Confirmation Modal */}
+        {recipeToDelete && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+            <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 text-xl">⚠️</div>
+                <h3 className="text-lg font-bold text-gray-900">Видалити страву?</h3>
+              </div>
+              <p className="text-gray-600 mb-6 text-sm">
+                Ви впевнені, що хочете назавжди видалити страву <span className="font-bold">"{recipesDb[recipeToDelete]?.name}"</span>? 
+                Вона також зникне з вашого планувальника.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setRecipeToDelete(null)} className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm">
+                  Скасувати
+                </button>
+                <button onClick={confirmDeleteRecipe} className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 transition-colors font-medium text-sm shadow-sm">
+                  Так, видалити
+                </button>
               </div>
             </div>
           </div>
