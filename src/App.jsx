@@ -30,10 +30,10 @@ export default function MealPlannerApp() {
     setPicker(null);
   };
 
-  const mobileCurrent = activeTab === 'plan' ? mobileView : activeTab === 'list' ? 'list' : null;
+  const mobileCurrent = activeTab === 'plan' ? mobileView : activeTab;
   const handleMobileTab = (id) => {
-    if (id === 'list') {
-      setActiveTab('list');
+    if (id === 'list' || id === 'meals') {
+      setActiveTab(id);
     } else {
       setActiveTab('plan');
       setMobileView(id);
@@ -84,22 +84,28 @@ export default function MealPlannerApp() {
         </>
       )}
 
-      {activeTab !== 'plan' && (
-        <main className="max-w-6xl mx-auto p-4 lg:p-8 text-gray-800 font-sans">
-          {activeTab === 'list' && (
-            <ShoppingListView
-              persons={persons}
-              isShoppingListEmpty={planner.isShoppingListEmpty}
-              shoppingListCategories={planner.shoppingListCategories}
-              checkedItems={planner.checkedItems}
-              toggleItemCheck={planner.toggleItemCheck}
-              onGoToPlan={() => setActiveTab('plan')}
-            />
-          )}
-          {activeTab === 'meals' && (
-            <RecipesView recipesDb={recipesDb} onEdit={modal.handleOpenEditModal} onDelete={modal.setRecipeToDelete} />
-          )}
-        </main>
+      {activeTab === 'list' && (
+        <ShoppingListView
+          persons={persons}
+          week={week}
+          shoppingListCategories={planner.shoppingListCategories}
+          checkedItems={planner.checkedItems}
+          toggleItemCheck={planner.toggleItemCheck}
+          addExtraItem={planner.addExtraItem}
+          removeExtraItem={planner.removeExtraItem}
+          onGoToPlan={() => setActiveTab('plan')}
+        />
+      )}
+
+      {activeTab === 'meals' && (
+        <RecipesView
+          recipesDb={recipesDb}
+          planCounts={planner.planCounts}
+          week={week}
+          onEdit={modal.handleOpenEditModal}
+          onToggleFavorite={planner.toggleFavorite}
+          onAddToPlan={planner.handleMealSelect}
+        />
       )}
 
       <MobileTabBar current={mobileCurrent} onChange={handleMobileTab} onCreate={modal.handleOpenAddModal} />

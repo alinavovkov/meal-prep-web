@@ -22,5 +22,10 @@ const MEAL_EMOJI = { 'Сніданок': '🥞', 'Обід': '🍲', 'Вечер
 export const getMealView = (recipeId, recipesDb, mealType) => {
   const recipe = recipeId ? recipesDb[recipeId] : null;
   if (!recipe) return { empty: true, name: '', photo: null, emoji: MEAL_EMOJI[mealType] };
-  return { empty: false, name: recipe.name, photo: RECIPE_PHOTOS[recipeId] || null, emoji: MEAL_EMOJI[mealType] };
+  return { empty: false, name: recipe.name, photo: recipe.photo || RECIPE_PHOTOS[recipeId] || null, emoji: MEAL_EMOJI[mealType] };
 };
+
+export const PHOTO_OPTIONS = [
+  'pizza', 'toast', 'omelet', 'oatmeal', 'crepes', 'vareniki', 'deruny', 'pasta',
+  'soup', 'plov', 'golubtsi', 'cutlets', 'salmon',
+];

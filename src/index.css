@@ -18,3 +18,13 @@ body {
   color: var(--color-ink);
   font-family: var(--font-body);
 }
+
+@media print {
+  .no-print,
+  nav {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}
