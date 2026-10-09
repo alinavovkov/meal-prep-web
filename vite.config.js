@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-  base: '/meal-prep-web/', // наприклад: base: '/meal-planner/',
+  plugins: [react(), tailwindcss()],
+  base: '/meal-prep-web/',
 })
-
