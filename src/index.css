@@ -1,1 +1,30 @@
 @import "tailwindcss";
+
+@theme {
+  --color-paper: #F4EFE6;
+  --color-ink: #141414;
+  --color-muted: #5E5A55;
+  --color-sun: #F7F39A;
+  --color-royal: #3D7BE3;
+
+  --font-display: "Oranienbaum", serif;
+  --font-head: "Unbounded", sans-serif;
+  --font-serif: "Cormorant Garamond", serif;
+  --font-body: "Manrope", sans-serif;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+@media print {
+  .no-print,
+  nav {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}
